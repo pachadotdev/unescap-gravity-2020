@@ -1,30 +1,41 @@
 # Use Remoteness Indexes to control for MRs ----
 
 ## Call previous scripts
-source("02-traditional-gravity/00-packages-and-data.R")
-source("02-traditional-gravity/01-prepare-data.R")
 
-## Create Remoteness indexes
+source("01-packages-and-data.R")
+source("02-prepare-data.R")
+
+## Create Remoteness Importer Index
+
+gravity2_rem_exp <- gravity2 %>% 
+  select(exporter, year, expenditure, dist) %>% 
+  group_by(exporter, year) %>% 
+  summarise(rem_exp = log(weighted.mean(dist, expenditure)))
+
+## Create Remoteness Importer Index
+
+gravity2_rem_imp <- gravity2 %>% 
+  select(importer, year, output, dist) %>% 
+  group_by(importer, year) %>% 
+  summarise(rem_imp = log(weighted.mean(dist, output)))
+
+## Join Remoteness Indexes
+
+gravity2 <- gravity2 %>% 
+  left_join(gravity2_rem_exp) %>% 
+  left_join(gravity2_rem_imp)
+
+## Remove 0 flows
+## IMPORTANT: If we don't do this, lm fails because log(0) = -Inf
 
 gravity2 <- gravity2 %>%
-  # Replicate rem_exp
-  group_by(exporter, year) %>%
-  mutate(
-    rem_exp = log(sum(expenditure * dist) / sum(expenditure))
-  ) %>% 
-  
-  # Replicate rem_imp
-  group_by(importer, year) %>%
-  mutate(
-    rem_imp = log(sum(output * dist) / sum(output))
-  ) %>% 
-  
-  ungroup()
+  filter(exporter != importer, trade > 0)
 
 ## Adjust 
 
 rem_formula <- as.formula("log_trade ~ log_dist + cntg + lang + clny + 
   log_output + log_expenditure + rem_exp + rem_imp")
+
 model3 <- lm(rem_formula, data = gravity2)
 
 ## Compute clustered standard errors
@@ -55,7 +66,7 @@ model3_results <- list(
     n_obs = nrow(gravity2),
     f_stat = fs3,
     prob_f = fp3,
-    adj_r_sq = summary(model3)$adj.r.squared,
+    r_sq = summary(model3)$r.squared,
     root_mse = rmse3
   ),
   coefficients = coef_test3
@@ -76,4 +87,3 @@ vcov_cluster4 <- vcovCL(model4, cluster = gravity2[, "pair"],
 coef_test4 <- tidy(coeftest(model4, vcov_cluster4))
 
 coef_test4
-

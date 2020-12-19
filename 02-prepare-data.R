@@ -37,9 +37,3 @@ gravity2 <- gravity2 %>%
     second = ifelse(exporter < importer, importer, exporter),
     symm = paste(first, second, sep = "_")
   )
-
-## Additional step for the lm function: remove 0 flows
-## IMPORTANT: If we don't do this, lm fails because log(0) = -Inf
-
-gravity2 <- gravity2 %>% 
-  filter(exporter != importer, trade > 0)

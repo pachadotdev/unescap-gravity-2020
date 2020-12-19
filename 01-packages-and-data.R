@@ -9,4 +9,4 @@ library(broom) # tidy regression results
 
 # Data ----
 
-gravity <- clean_names(read_dta("01-data/gravity-data.dta"))
+gravity <- clean_names(read_dta("data/gravity-data.dta"))

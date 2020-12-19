@@ -2,8 +2,14 @@
 
 ## Call previous scripts
 
-source("02-traditional-gravity/00-packages-and-data.R")
-source("02-traditional-gravity/01-prepare-data.R")
+source("01-packages-and-data.R")
+source("02-prepare-data.R")
+
+## Remove 0 flows
+## IMPORTANT: If we don't do this, lm fails because log(0) = -Inf
+
+gravity2 <- gravity2 %>%
+  filter(exporter != importer, trade > 0)
 
 ## Estimate Gravity & Store Results
 
@@ -40,7 +46,7 @@ model1_results <- list(
     n_obs = nrow(gravity2),
     f_stat = fs1,
     prob_f = fp1,
-    adj_r_sq = summary(model1)$adj.r.squared,
+    r_sq = summary(model1)$r.squared,
     root_mse = rmse1
   ),
   coefficients = coef_test1
