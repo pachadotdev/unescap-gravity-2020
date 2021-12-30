@@ -3,7 +3,7 @@ bookdown::gitbook:
   config:
     toc:
       before: |
-        <li><a href="./">Solutions Manual for An Advanced Guide to Trade Policy Analysis</a></li>
+        <li><a href="./">ARTNeT Advanced Workshop on Analysing Trade and Trade Policy with the Structural Gravity Model</a></li>
       after: |
         <li><a href="https://www.unescap.org/" target="blank">UN ESCAP - Published with bookdown</a></li>
 bookdown::pdf_book:
