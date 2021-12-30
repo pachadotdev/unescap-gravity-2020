@@ -5,7 +5,7 @@
 source("01-packages-and-data.R")
 source("02-prepare-data.R")
 
-## Create Remoteness Importer Index
+## Create Remoteness Exporter Index
 
 gravity2_rem_exp <- gravity2 %>% 
   select(exporter, year, expenditure, dist) %>% 

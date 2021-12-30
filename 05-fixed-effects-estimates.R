@@ -5,8 +5,8 @@
 source("01-packages-and-data.R")
 source("02-prepare-data.R")
 
-## Create Remoteness Importer Index
-## This step is VERY DIFFERENT to Stata, in Stata you need to create 
+## Create Fixed Effects
+## This step is VERY DIFFERENT in Stata, in Stata you need to create 
 ## 830 0-1 columns, here you only need 2 factor columns
 
 gravity2 <- gravity2 %>% 

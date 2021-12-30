@@ -1,0 +1,352 @@
+---
+title: "ARTNeT Advanced Workshop on Analysing Trade and Trade Policy with the Structural Gravity Model"
+author: Mauricio "Pachá" Vargas Sepúlveda
+date: "2021-12-29"
+site: bookdown::bookdown_site
+documentclass: book
+bibliography: [00-references.bib, 00-packages.bib]
+biblio-style: apalike
+link-citations: yes
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, cache = TRUE, warning = FALSE, message = FALSE)
+```
+
+# Introduction
+
+## Usual disclaimer
+
+The views and opinions expressed in this course are solely those
+of the author and do not necessarily reflect the official position
+of any unit of the United Nations, the University of Toronto or the
+Pontifical Catholic University of Chile.
+
+## Background
+
+This unit of the workshop is based on @yotov2016advanced.
+
+## Getting the most out of this material
+
+You can clone the GitHub repository to obtain the editable R files:
+
+```
+git clone https://github.com/pachamaltese/unescap-gravity-2020.git
+```
+
+Please read @happygitwithr if you have questions about git or GitHub.
+
+# Packages and data
+
+## Packages
+
+Required packages for this workshop:
+
+```{r pkgs}
+library(haven) # read dta format (Stata)
+library(janitor) # tidy column names
+library(dplyr) # chained operations
+library(sandwich) # covariance based estimators
+library(lmtest) # econometric tests
+library(broom) # tidy regression results
+```
+
+## Data
+
+We can read directly from Stata files:
+
+```{r data}
+gravity <- clean_names(read_dta("data/gravity-data.dta"))
+```
+
+Now we need to prepare interval data:
+
+```{r data2}
+gravity2 <- gravity %>% 
+  filter(year %in% seq(1986, 2006, 4))
+```
+
+We are going to need to create and transform some variables that are 
+needed later:
+
+```{r data3}
+gravity2 <- gravity2 %>% 
+  mutate(
+    log_trade = log(trade),
+    log_dist = log(dist)
+  ) %>% 
+  
+  group_by(exporter, year) %>% 
+  mutate(
+    output = sum(trade),
+    log_output = log(output)
+  ) %>% 
+
+  group_by(importer, year) %>% 
+  mutate(
+    expenditure = sum(trade),
+    log_expenditure = log(expenditure)
+  ) %>% 
+  
+  ungroup()
+```
+
+Before concluiding data preparation, we need to create pair ID and symmetric 
+pair ID variables. IMPORTANT: Here we don't need to create `pair_id` and 
+`symm_id` as in Stata, the process is much simpler here (but other tasks will 
+be harder!)
+
+```{r data4}
+gravity2 <- gravity2 %>% 
+  mutate(
+    pair = paste(exporter, importer, sep = "_"),
+    first = ifelse(exporter < importer, exporter, importer),
+    second = ifelse(exporter < importer, importer, exporter),
+    symm = paste(first, second, sep = "_")
+  )
+```
+
+# OLS estimates
+
+The general equation for this model is:
+$$
+\begin{align}
+\log X_{ij,t} =& \:\beta_0 + \beta_1 DIST_{i,j} + \beta_2 CNTG_{i,j} + \beta_3 LANG_{i,j} + \beta_4 CLNY_{i,j} + \beta_5 \log Y_{i,t} +\\
+\text{ }& \beta_6 \log E_{j,t} + \varepsilon_{ij,t}
+\end{align}
+$$
+
+We start by removing 0 flows. IMPORTANT: If we don't do this, lm fails because 
+`log(0) = -Inf`.
+
+```{r ols}
+gravity2 <- gravity2 %>%
+  filter(exporter != importer, trade > 0)
+```
+
+## Adjust
+
+We start with a linear model with usual standard errors:
+
+```{r ols2}
+model1 <- lm(log_trade ~ log_dist + cntg + lang + clny + log_output +
+               log_expenditure, data = gravity2)
+
+summary(model1) # no clustered std error here!
+```
+
+## Compute clustered standard errors
+
+In R we can work on top of the previous model to obtain a clustered variance
+matrix:
+
+```{r ols3}
+vcov_cluster1 <- vcovCL(model1, cluster = gravity2[, "pair"], 
+                       df_correction = TRUE)
+
+coef_test1 <- tidy(coeftest(model1, vcov_cluster1))
+```
+
+From here we can obtain correct (clustered) F distribution based statistics
+
+```{r ols4}
+wald1 <- tidy(waldtest(model1, vcov = vcov_cluster1, test = "F"))
+fs1 <- wald1$statistic[2]
+fp1 <- wald1$p.value[2]
+```
+
+Same for obtaining the root MSE
+
+```{r ols5}
+rss1 <- as.numeric(crossprod(model1$residuals))
+rmse1 <- sqrt(rss1 / length(model1$residuals))
+```
+
+Now we can create a list with all the previous information:
+
+```{r ols6}
+model1_results <- list(
+  summary = tibble(
+    n_obs = nrow(gravity2),
+    f_stat = fs1,
+    prob_f = fp1,
+    r_sq = summary(model1)$r.squared,
+    root_mse = rmse1
+  ),
+  coefficients = coef_test1
+)
+
+model1_results
+```
+
+## RESET test
+
+It is (extremely) important to conduct a misspecification test, this is
+easier to do in Stata but we can still work it out in R:
+
+```{r ols7}
+gravity2 <- gravity2 %>% 
+  mutate(fit2 = predict(model1)^2)
+ 
+model2 <- lm(log_trade ~ log_dist + cntg + lang + clny + log_output +
+               log_expenditure + fit2, data = gravity2)
+
+vcov_cluster2 <- vcovCL(model2, cluster = gravity2[, "pair"], 
+                        df_correction = TRUE)
+
+coef_test2 <- tidy(coeftest(model2, vcov_cluster2))
+
+coef_test2
+```
+
+# Remoteness estimates
+
+The remoteness model adds variables to the OLS model. The general equation for this model is:
+$$
+\begin{align}
+\log X_{ij,t} =& \:\beta_0 + \beta_1 DIST_{i,j} + \beta_2 CNTG_{i,j} + \beta_3 LANG_{i,j} + \beta_4 CLNY_{i,j} + \beta_5 \log Y_{i,t} +\\
+\text{ }& \beta_6 \log E_{j,t} + \beta_7 \log(REM\_EXP_i,t) + \beta_8 \log(REM\_IMP_i,t) + \varepsilon_{ij,t}
+\end{align}
+$$
+
+Where
+$$
+\log(REM\_EXP_{i,t}) = \log \left( \sum_j \frac{DIST_{i,j}}{E_{j,t} / Y_t} \right)\\
+\log(REM\_IMP_{j,t}) = \log \left( \sum_i \frac{DIST_{i,j}}{Y_{i,t} / Y_t} \right)
+$$
+
+## Create remoteness indexes
+
+We can create each index in a new table and then join the results:
+
+```{r remoteness}
+gravity2_rem_exp <- gravity2 %>% 
+  select(exporter, year, expenditure, dist) %>% 
+  group_by(exporter, year) %>% 
+  summarise(rem_exp = log(weighted.mean(dist, expenditure)))
+
+gravity2_rem_imp <- gravity2 %>% 
+  select(importer, year, output, dist) %>% 
+  group_by(importer, year) %>% 
+  summarise(rem_imp = log(weighted.mean(dist, output)))
+
+gravity2 <- gravity2 %>% 
+  left_join(gravity2_rem_exp) %>% 
+  left_join(gravity2_rem_imp)
+```
+
+## Adjust 
+
+```{r remoteness2}
+rem_formula <- as.formula("log_trade ~ log_dist + cntg + lang + clny + 
+  log_output + log_expenditure + rem_exp + rem_imp")
+
+model3 <- lm(rem_formula, data = gravity2)
+```
+
+## Compute clustered standard errors
+
+```{r remoteness3}
+vcov_cluster3 <- vcovCL(model3, cluster = gravity2[, "pair"], 
+                        df_correction = TRUE)
+
+coef_test3 <- tidy(coeftest(model3, vcov_cluster3))
+
+wald3 <- tidy(waldtest(model3, vcov = vcov_cluster3, test = "F"))
+fs3 <- wald3$statistic[2]
+fp3 <- wald3$p.value[2]
+
+rss3 <- as.numeric(crossprod(model3$residuals))
+rmse3 <- sqrt(rss3 / length(model3$residuals))
+
+model3_results <- list(
+  summary = tibble(
+    n_obs = nrow(gravity2),
+    f_stat = fs3,
+    prob_f = fp3,
+    r_sq = summary(model3)$r.squared,
+    root_mse = rmse3
+  ),
+  coefficients = coef_test3
+)
+
+model3_results
+```
+
+## RESET test
+
+```{r remoteness4}
+gravity2 <- gravity2 %>% 
+  mutate(fit2 = predict(model3)^2)
+
+model4 <- lm(update(rem_formula, ~ . + fit2), data = gravity2)
+
+vcov_cluster4 <- vcovCL(model4, cluster = gravity2[, "pair"], 
+                        df_correction = TRUE)
+
+coef_test4 <- tidy(coeftest(model4, vcov_cluster4))
+
+coef_test4
+```
+
+# Fixed effects estimates
+
+## Create fixed effects
+
+This step is very different compared to Stata. By using Stata you need to create 
+830 0-1 columns, here you only need 2 factor columns:
+
+```{r fe}
+gravity2 <- gravity2 %>% 
+  mutate(
+    exp_time = as.factor(paste(exporter, year, sep = "_")),
+    imp_time = as.factor(paste(importer, year, sep = "_"))
+  )
+```
+
+Now we see how many dummy variables we are adding to the OLS model, 
+there's a high risk of collinearity!:
+
+```{r fe2}
+length(levels(gravity2$exp_time)) + length(levels(gravity2$imp_time))
+```
+
+## Adjust 
+
+```{r fe3}
+fe_formula <- as.formula("log_trade ~ log_dist + cntg + lang + clny + 
+                         exp_time + imp_time")
+
+model5 <- lm(fe_formula, data = gravity2)
+```
+
+## Check for collinear terms
+
+```{r fe4}
+collinear_terms <- alias(model5)
+
+collinear_matrix <- collinear_terms$Complete
+
+rownames(collinear_matrix)
+```
+
+## Compute clustered standard errors
+
+```{r fe5}
+vcov_cluster5 <- vcovCL(model5, cluster = gravity2[, "pair"], 
+                        df_correction = TRUE)
+
+coef_test5 <- tidy(coeftest(
+  model5,
+  vcov_cluster5[
+    which(!grepl("^exp_time|^imp_time", rownames(vcov_cluster5))),
+    which(!grepl("^exp_time|^imp_time", colnames(vcov_cluster5)))
+  ]
+))
+
+coef_test5
+
+summary(model5)$r.squared
+```
+
+# References
